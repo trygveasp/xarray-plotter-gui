@@ -15,7 +15,7 @@ from data.loader import DataLoader
 class MainWindow(QMainWindow):
     """Main application window."""
 
-    def __init__(self):
+    def __init__(self, fname=None):
         super().__init__()
         self.setWindowTitle("Xarray Plotter GUI")
         self.setGeometry(100, 100, 1000, 700)
@@ -57,25 +57,30 @@ class MainWindow(QMainWindow):
         # Right side: Variable lists grouped by number of dimensions
         right_layout = QVBoxLayout()
         right_layout.addWidget(QLabel("Variables (sorted by dimensions):"))
-        
+
         # Container for dimension groups
         self.dimension_groups = {}
         self.variable_lists = {}
-        
+
         content_layout.addLayout(right_layout, 2)
         layout.addLayout(content_layout)
 
         # Status bar
         self.statusBar().showMessage("Ready")
 
-    def open_file(self):
-        """Open a file dialog and load a GRIB or NetCDF file."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Open GRIB, NetCDF File",
-            "",
-            "grbfp Files (*.grbfp);;GRIB Files (*.grib *.grib2 *.grb *.grb2);;NetCDF Files (*.nc *.netcdf);;All Files (*)"
-        )
+        if fname is not None:
+            self.open_file(fname=fname)
+
+    def open_file(self, fname=None):
+        file_path = fname
+        if fname is None:
+            """Open a file dialog and load a GRIB or NetCDF file."""
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Open GRIB, NetCDF File",
+                "",
+                "grbfp Files (*.grbfp);;GRIB Files (*.grib *.grib2 *.grb *.grb2);;NetCDF Files (*.nc *.netcdf);;All Files (*)"
+            )
 
         if file_path:
             try:
@@ -94,59 +99,59 @@ class MainWindow(QMainWindow):
             return
 
         vert_dim = self.control_panel.get_selected_vertical_dim()
-        
+
         # Get variables and filter by vertical dimension
         variables = list(self.current_data.data_vars)
-        
+
         if vert_dim and vert_dim != "None":
-            variables = [var for var in variables 
+            variables = [var for var in variables
                         if vert_dim in self.current_data[var].dims or
                            vert_dim.lower() in [d.lower() for d in self.current_data[var].dims]]
-        
+
         # Group variables by non-spatial, non-time dimensions
         dimension_groups = {}
-        
+
         for var_name in variables:
             var = self.current_data[var_name]
-            
+
             # Get dimensions excluding time, x, y, lat, lon
             spatial_time_dims = {'time', 'x', 'y', 'lat', 'lon', 'latitude', 'longitude'}
             other_dims = tuple(sorted([d for d in var.dims if d.lower() not in spatial_time_dims]))
-            
+
             # Create key for grouping
             if not other_dims:
                 group_key = "2D (time/space only)"
             else:
                 group_key = f"{len(other_dims)}D other: {', '.join(other_dims)}"
-            
+
             if group_key not in dimension_groups:
                 dimension_groups[group_key] = []
             dimension_groups[group_key].append(var_name)
-        
+
         # Clear existing groups
         content_widget = self.centralWidget().layout().itemAt(1).itemAt(1).widget()
         if content_widget and hasattr(content_widget, 'layout'):
             layout = content_widget.layout()
             while layout.count() > 1:  # Keep the label
                 layout.takeAt(1).widget().deleteLater()
-        
+
         self.dimension_groups = {}
         self.variable_lists = {}
-        
+
         # Get the right layout
         right_layout = self.centralWidget().layout().itemAt(1).itemAt(1)
-        
+
         # Add groups sorted by number of dimensions
-        sorted_groups = sorted(dimension_groups.keys(), 
+        sorted_groups = sorted(dimension_groups.keys(),
                               key=lambda x: (0 if x == "2D (time/space only)" else int(x.split('D')[0])))
-        
+
         for group_key in sorted_groups:
             group_box = QGroupBox(group_key)
             group_layout = QVBoxLayout()
-            
+
             var_list = QListWidget()
             var_list.itemClicked.connect(lambda item: self.on_variable_list_clicked(item))
-            
+
             # Add variables to this group
             for var_name in sorted(dimension_groups[group_key]):
                 var = self.current_data[var_name]
@@ -155,11 +160,11 @@ class MainWindow(QMainWindow):
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.ItemDataRole.UserRole, var_name)
                 var_list.addItem(item)
-            
+
             group_layout.addWidget(var_list)
             group_box.setLayout(group_layout)
             right_layout.addWidget(group_box)
-            
+
             self.dimension_groups[group_key] = group_box
             self.variable_lists[group_key] = var_list
 
@@ -173,6 +178,7 @@ class MainWindow(QMainWindow):
         """Handle variable change from control panel."""
         if self.current_data and var_name:
             self.statusBar().showMessage(f"Selected: {var_name}")
+            self.open_plot_window(var_name)
 
     def on_vertical_dim_changed(self, vert_dim):
         """Handle vertical dimension change."""

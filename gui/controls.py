@@ -15,7 +15,7 @@ class ControlPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.current_data = None
-        
+
         layout = QVBoxLayout()
 
         # Vertical dimension selection
@@ -58,21 +58,21 @@ class ControlPanel(QWidget):
     def populate_vertical_dimensions(self, data):
         """Populate vertical dimension combo box with sorted dimensions."""
         vertical_dims = self._get_vertical_dimensions(data)
-        
+
         self.vert_dim_combo.blockSignals(True)
         self.vert_dim_combo.clear()
-        
+
         # Sort dimensions with preferred order
         preferred_order = ["level", "height", "pressure", "sigma"]
-        sorted_dims = sorted(vertical_dims, 
-                            key=lambda x: (preferred_order.index(x.lower()) 
+        sorted_dims = sorted(vertical_dims,
+                            key=lambda x: (preferred_order.index(x.lower())
                                           if x.lower() in preferred_order else len(preferred_order)))
-        
+
         if sorted_dims:
             self.vert_dim_combo.addItems(sorted_dims)
         else:
             self.vert_dim_combo.addItem("None")
-        
+
         self.vert_dim_combo.blockSignals(False)
 
     def update_variables_by_dimension(self, vert_dim):
@@ -81,7 +81,9 @@ class ControlPanel(QWidget):
             return
 
         filtered_vars = []
-        
+
+        print(f"Updating variables for vertical dimension: {vert_dim}")
+        ndims = int(vert_dim[0])
         if vert_dim == "None":
             # Include all variables
             filtered_vars = list(self.current_data.data_vars)
@@ -89,8 +91,7 @@ class ControlPanel(QWidget):
             # Include only variables with this vertical dimension
             for var_name in self.current_data.data_vars:
                 var = self.current_data[var_name]
-                if vert_dim in var.dims or (vert_dim.lower() in 
-                                           [d.lower() for d in var.dims]):
+                if len(var.dims) == ndims:
                     filtered_vars.append(var_name)
 
         self.variable_combo.blockSignals(True)
@@ -114,12 +115,20 @@ class ControlPanel(QWidget):
     @staticmethod
     def _get_vertical_dimensions(data):
         """Get list of vertical dimensions in dataset."""
-        vertical_dim_names = ["level", "height", "pressure", "sigma", "isobaric", "depth"]
+        vertical_dim_names = ["level", "height2", "pressure", "sigma", "isobaric", "depth"]
         found_dims = set()
-        
+
         for var in data.data_vars.values():
-            for dim in var.dims:
-                if dim.lower() in vertical_dim_names:
-                    found_dims.add(dim)
-        
+            print(var.dims)
+            dims = 2
+            if "time" in var.dims:
+                dims = 3
+            if len(var.dims) >= 2:
+                ndims = f"{len(var.dims)}D"
+                if ndims not in found_dims:
+                    found_dims.add(str(ndims))
+                #for dim in var.dims:
+                #    if dim.lower() in vertical_dim_names:
+                #        found_dims.add(dim)
+
         return sorted(list(found_dims))
