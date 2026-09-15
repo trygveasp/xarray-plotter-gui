@@ -4,10 +4,10 @@ import sys
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QFileDialog, QLabel, QStatusBar
+    QPushButton, QFileDialog, QLabel, QListWidget, QListWidgetItem, QSplitter
 )
 from PyQt6.QtCore import Qt
-from gui.plot_widget import PlotWidget
+from gui.plot_window import PlotWindow
 from gui.controls import ControlPanel
 from data.loader import DataLoader
 
@@ -18,38 +18,54 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Xarray Plotter GUI")
-        self.setGeometry(100, 100, 1200, 800)
+        self.setGeometry(100, 100, 1000, 700)
 
         self.data_loader = DataLoader()
         self.current_data = None
         self.current_file = None
+        self.plot_window = None
 
         # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QHBoxLayout(central_widget)
+        layout = QVBoxLayout(central_widget)
 
-        # Left side: controls
-        left_layout = QVBoxLayout()
+        # Top: File controls
+        file_layout = QHBoxLayout()
         self.open_button = QPushButton("Open File")
         self.open_button.clicked.connect(self.open_file)
-        left_layout.addWidget(self.open_button)
+        file_layout.addWidget(self.open_button)
 
         self.file_label = QLabel("No file opened")
-        left_layout.addWidget(QLabel("Current File:"))
-        left_layout.addWidget(self.file_label)
+        file_layout.addWidget(QLabel("File:"))
+        file_layout.addWidget(self.file_label)
+        file_layout.addStretch()
+        layout.addLayout(file_layout)
 
+        # Main content: Controls and Variable List
+        content_layout = QHBoxLayout()
+
+        # Left side: controls
         self.control_panel = ControlPanel()
         self.control_panel.variable_changed.connect(self.on_variable_changed)
-        self.control_panel.time_changed.connect(self.on_time_changed)
-        self.control_panel.level_changed.connect(self.on_level_changed)
-        left_layout.addWidget(self.control_panel)
-        left_layout.addStretch()
+        self.control_panel.vertical_dim_changed.connect(self.on_vertical_dim_changed)
+        content_layout.addWidget(self.control_panel, 1)
 
-        # Right side: plot
-        self.plot_widget = PlotWidget()
-        layout.addLayout(left_layout, 1)
-        layout.addWidget(self.plot_widget, 2)
+        # Right side: Variable list sorted by dimensions
+        var_group_layout = QVBoxLayout()
+        var_group_layout.addWidget(QLabel("Variables (sorted by dimensions):"))
+        self.variable_list = QListWidget()
+        self.variable_list.itemClicked.connect(self.on_variable_list_clicked)
+        var_group_layout.addWidget(self.variable_list)
+        content_layout.addLayout(var_group_layout, 1)
+
+        layout.addLayout(content_layout)
+
+        # Bottom: Info
+        info_layout = QHBoxLayout()
+        self.info_label = QLabel("Ready")
+        info_layout.addWidget(self.info_label)
+        layout.addLayout(info_layout)
 
         # Status bar
         self.statusBar().showMessage("Ready")
@@ -69,69 +85,88 @@ class MainWindow(QMainWindow):
                 self.current_data = self.data_loader.load_file(file_path)
                 self.file_label.setText(Path(file_path).name)
                 self.control_panel.populate_variables(self.current_data)
+                self.populate_variable_list()
                 self.statusBar().showMessage(f"Loaded: {Path(file_path).name}")
             except Exception as e:
                 self.statusBar().showMessage(f"Error loading file: {str(e)}")
 
+    def populate_variable_list(self):
+        """Populate variable list sorted by number of dimensions."""
+        if not self.current_data:
+            return
+
+        vert_dim = self.control_panel.get_selected_vertical_dim()
+        
+        # Get variables
+        variables = list(self.current_data.data_vars)
+        
+        # Filter by vertical dimension if selected
+        if vert_dim and vert_dim != "None":
+            variables = [var for var in variables 
+                        if vert_dim in self.current_data[var].dims or
+                           vert_dim.lower() in [d.lower() for d in self.current_data[var].dims]]
+        
+        # Sort by number of dimensions (descending)
+        variables.sort(
+            key=lambda v: len(self.current_data[v].dims),
+            reverse=True
+        )
+
+        # Populate list with dimension info
+        self.variable_list.clear()
+        for var_name in variables:
+            var = self.current_data[var_name]
+            n_dims = len(var.dims)
+            dims_str = ", ".join(var.dims)
+            item_text = f"{var_name} ({n_dims}D: {dims_str})"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, var_name)
+            self.variable_list.addItem(item)
+
+    def on_variable_list_clicked(self, item):
+        """Handle variable list click to open plot window."""
+        var_name = item.data(Qt.ItemDataRole.UserRole)
+        if var_name:
+            self.open_plot_window(var_name)
+
     def on_variable_changed(self, var_name):
-        """Handle variable change."""
+        """Handle variable change from control panel."""
         if self.current_data and var_name:
             try:
                 self.control_panel.populate_time_steps(self.current_data, var_name)
                 self.control_panel.populate_levels(self.current_data, var_name)
-                self.plot_data(var_name)
+                self.statusBar().showMessage(f"Selected: {var_name}")
             except Exception as e:
                 self.statusBar().showMessage(f"Error: {str(e)}")
 
-    def on_time_changed(self):
-        """Handle time step change."""
-        var_name = self.control_panel.get_selected_variable()
-        if var_name:
-            self.plot_data(var_name)
+    def on_vertical_dim_changed(self, vert_dim):
+        """Handle vertical dimension change."""
+        self.populate_variable_list()
 
-    def on_level_changed(self):
-        """Handle level change."""
-        var_name = self.control_panel.get_selected_variable()
-        if var_name:
-            self.plot_data(var_name)
-
-    def plot_data(self, var_name):
-        """Plot the selected variable."""
+    def open_plot_window(self, var_name):
+        """Open a new plot window for the selected variable."""
         if not self.current_data:
             return
 
+        if var_name not in self.current_data.data_vars:
+            self.statusBar().showMessage(f"Variable not found: {var_name}")
+            return
+
         try:
-            time_idx = self.control_panel.get_selected_time_index()
-            level_idx = self.control_panel.get_selected_level_index()
-            cmap = self.control_panel.get_colormap()
-            vmin = self.control_panel.get_vmin()
-            vmax = self.control_panel.get_vmax()
-
-            data_array = self.current_data[var_name]
-
-            # Extract 2D slice
-            if time_idx is not None and "time" in data_array.dims:
-                data_array = data_array.isel(time=time_idx)
-            if level_idx is not None and "level" in data_array.dims:
-                data_array = data_array.isel(level=level_idx)
-            elif level_idx is not None and "height" in data_array.dims:
-                data_array = data_array.isel(height=level_idx)
-
-            self.plot_widget.plot_data(
-                data_array,
-                title=f"{var_name}",
-                cmap=cmap,
-                vmin=vmin,
-                vmax=vmax
+            # Create and show plot window
+            self.plot_window = PlotWindow(
+                self.current_data,
+                var_name,
+                parent=self
             )
-            self.statusBar().showMessage(f"Plotted: {var_name}")
+            self.plot_window.show()
+            self.statusBar().showMessage(f"Opened plot window for: {var_name}")
         except Exception as e:
-            self.statusBar().showMessage(f"Error plotting: {str(e)}")
+            self.statusBar().showMessage(f"Error opening plot window: {str(e)}")
 
 
 def main():
     """Run the application."""
-    app = sys.modules.get('PyQt6.QtWidgets', __import__('PyQt6.QtWidgets'))
     from PyQt6.QtWidgets import QApplication
     app = QApplication(sys.argv)
     window = MainWindow()
