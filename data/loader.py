@@ -41,6 +41,8 @@ class DataLoader:
             return self._load_grib(file_path)
         elif file_path.suffix.lower() in [".nc", ".netcdf"]:
             return self._load_netcdf(file_path)
+        elif file_path.suffix.lower() in [".gribfp"]:
+            return self._load_fimex(file_path)
         else:
             raise ValueError(f"Unsupported file format: {file_path.suffix}")
 
@@ -82,3 +84,22 @@ class DataLoader:
             return ds
         except Exception as e:
             raise RuntimeError(f"Failed to load NetCDF file: {str(e)}")
+
+    def _load_fimex(self, file_path):
+        """Load file with fimex engine.
+
+        Parameters
+        ----------
+        file_path : Path
+            Path to NetCDF file
+
+        Returns
+        -------
+        xarray.Dataset
+            Loaded dataset
+        """
+        try:
+            ds = xr.open_dataset(file_path, engine="fimex")
+            return ds
+        except Exception as e:
+            raise RuntimeError(f"Failed to load file with fimex: {str(e)}")
