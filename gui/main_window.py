@@ -58,9 +58,9 @@ class MainWindow(QMainWindow):
         """Open a file dialog and load a GRIB or NetCDF file."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open GRIB or NetCDF File",
+            "Open GRIB, NetCDF File",
             "",
-            "GRIB Files (*.grib *.grib2 *.grb *.grb2);;NetCDF Files (*.nc *.netcdf);;All Files (*)"
+            "grbfp Files (*.grbfp);;GRIB Files (*.grib *.grib2 *.grb *.grb2);;NetCDF Files (*.nc *.netcdf);;All Files (*)"
         )
 
         if file_path:

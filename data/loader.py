@@ -41,7 +41,7 @@ class DataLoader:
             return self._load_grib(file_path)
         elif file_path.suffix.lower() in [".nc", ".netcdf"]:
             return self._load_netcdf(file_path)
-        elif file_path.suffix.lower() in [".gribfp"]:
+        elif file_path.suffix.lower() in [".grbfp"]:
             return self._load_fimex(file_path)
         else:
             raise ValueError(f"Unsupported file format: {file_path.suffix}")
@@ -99,6 +99,7 @@ class DataLoader:
             Loaded dataset
         """
         try:
+            file_path = str(file_path)
             ds = xr.open_dataset(file_path, engine="fimex")
             return ds
         except Exception as e:
