@@ -1,5 +1,6 @@
 """Control panel for variable selection."""
 
+import logging
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QComboBox, QGroupBox
 )
@@ -19,7 +20,7 @@ class ControlPanel(QWidget):
         layout = QVBoxLayout()
 
         # Vertical dimension selection
-        vert_group = QGroupBox("Vertical Dimension")
+        vert_group = QGroupBox("Dimension type")
         vert_layout = QVBoxLayout()
         self.vert_dim_combo = QComboBox()
         self.vert_dim_combo.currentTextChanged.connect(self.on_vertical_dim_changed)
@@ -53,7 +54,8 @@ class ControlPanel(QWidget):
     def set_current_data(self, data):
         """Set the current dataset and update dimension list."""
         self.current_data = data
-        self.populate_vertical_dimensions(data)
+        dim_type = self.populate_vertical_dimensions(data)
+        self.update_variables_by_dimension(dim_type)
 
     def populate_vertical_dimensions(self, data):
         """Populate vertical dimension combo box with sorted dimensions."""
@@ -74,6 +76,7 @@ class ControlPanel(QWidget):
             self.vert_dim_combo.addItem("None")
 
         self.vert_dim_combo.blockSignals(False)
+        return sorted_dims[0]
 
     def update_variables_by_dimension(self, vert_dim):
         """Update variable list based on selected vertical dimension."""
@@ -82,7 +85,7 @@ class ControlPanel(QWidget):
 
         filtered_vars = []
 
-        print(f"Updating variables for vertical dimension: {vert_dim}")
+        logging.debug(f"Updating variables for vertical dimension: {vert_dim}")
         ndims = int(vert_dim[0])
         if vert_dim == "None":
             # Include all variables
@@ -115,20 +118,13 @@ class ControlPanel(QWidget):
     @staticmethod
     def _get_vertical_dimensions(data):
         """Get list of vertical dimensions in dataset."""
-        vertical_dim_names = ["level", "height2", "pressure", "sigma", "isobaric", "depth"]
         found_dims = set()
 
         for var in data.data_vars.values():
-            print(var.dims)
-            dims = 2
-            if "time" in var.dims:
-                dims = 3
+            logging.debug(f"Variable dims: {var.dims}")
             if len(var.dims) >= 2:
                 ndims = f"{len(var.dims)}D"
                 if ndims not in found_dims:
                     found_dims.add(str(ndims))
-                #for dim in var.dims:
-                #    if dim.lower() in vertical_dim_names:
-                #        found_dims.add(dim)
 
         return sorted(list(found_dims))

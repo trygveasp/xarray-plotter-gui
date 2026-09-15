@@ -1,6 +1,7 @@
 """Main application window."""
 
 import sys
+import logging
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -17,8 +18,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self, fname=None):
         super().__init__()
+        self.fname = fname
         self.setWindowTitle("Xarray Plotter GUI")
-        self.setGeometry(100, 100, 1000, 700)
+        self.setGeometry(100, 100, 500, 500)
 
         self.data_loader = DataLoader()
         self.current_data = None
@@ -56,7 +58,7 @@ class MainWindow(QMainWindow):
 
         # Right side: Variable lists grouped by number of dimensions
         right_layout = QVBoxLayout()
-        right_layout.addWidget(QLabel("Variables (sorted by dimensions):"))
+        #right_layout.addWidget()#QLabel("Variables (sorted by dimensions):"))
 
         # Container for dimension groups
         self.dimension_groups = {}
@@ -65,15 +67,17 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(right_layout, 2)
         layout.addLayout(content_layout)
 
+        if self.fname is not None:
+            logging.debug(f"Opening file from command line: {self.fname}")
+            self.open_file()
+
+        self.fname = None  # Reset fname after opening
         # Status bar
         self.statusBar().showMessage("Ready")
 
-        if fname is not None:
-            self.open_file(fname=fname)
-
-    def open_file(self, fname=None):
-        file_path = fname
-        if fname is None:
+    def open_file(self):
+        file_path = self.fname
+        if file_path is None:
             """Open a file dialog and load a GRIB or NetCDF file."""
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
@@ -92,6 +96,7 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Loaded: {Path(file_path).name}")
             except Exception as e:
                 self.statusBar().showMessage(f"Error loading file: {str(e)}")
+        #self.fname = None
 
     def populate_variable_lists(self):
         """Populate variable lists grouped by number of dimensions."""
