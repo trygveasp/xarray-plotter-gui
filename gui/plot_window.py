@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QLabel, QComboBox, QSpinBox, QDoubleSpinBox, QGroupBox,
     QPushButton, QScrollArea
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer
 from gui.plot_widget import PlotWidget
 
 
@@ -19,6 +19,7 @@ class PlotWindow(QMainWindow):
         self.animation_timer = QTimer()
         self.animation_timer.timeout.connect(self.advance_time_step)
         self.animation_speed = 500  # milliseconds
+        self.dimension_selectors = {}  # Store dimension selectors
 
         self.setWindowTitle(f"Plot: {var_name}")
         self.setGeometry(200, 200, 1400, 800)
@@ -91,17 +92,29 @@ class PlotWindow(QMainWindow):
         time_group.setLayout(time_layout)
         scroll_layout.addWidget(time_group)
 
-        # Level selection
-        level_group = QGroupBox("Vertical Level")
-        level_layout = QVBoxLayout()
-        self.level_spin = QSpinBox()
-        self.level_spin.valueChanged.connect(self.on_level_changed)
-        level_layout.addWidget(QLabel("Level Index:"))
-        level_layout.addWidget(self.level_spin)
-        self.level_value_label = QLabel("")
-        level_layout.addWidget(self.level_value_label)
-        level_group.setLayout(level_layout)
-        scroll_layout.addWidget(level_group)
+        # Other dimensions selection
+        other_dims = self._get_other_dimensions()
+        if other_dims:
+            other_group = QGroupBox("Other Dimensions")
+            other_layout = QVBoxLayout()
+            
+            for dim in other_dims:
+                dim_layout = QHBoxLayout()
+                dim_layout.addWidget(QLabel(f"{dim}:"))
+                
+                spin = QSpinBox()
+                spin.valueChanged.connect(self.on_dimension_changed)
+                self.dimension_selectors[dim] = spin
+                dim_layout.addWidget(spin)
+                
+                value_label = QLabel("")
+                self.dimension_selectors[f"{dim}_label"] = value_label
+                dim_layout.addWidget(value_label)
+                
+                other_layout.addLayout(dim_layout)
+            
+            other_group.setLayout(other_layout)
+            scroll_layout.addWidget(other_group)
 
         # Colormap selection
         cmap_group = QGroupBox("Colormap")
@@ -146,6 +159,13 @@ class PlotWindow(QMainWindow):
         self._initialize_controls()
         self.plot_data()
 
+    def _get_other_dimensions(self):
+        """Get dimensions excluding time, x, y, lat, lon."""
+        var = self.data[self.var_name]
+        spatial_time_dims = {'time', 'x', 'y', 'lat', 'lon', 'latitude', 'longitude'}
+        other_dims = [d for d in var.dims if d.lower() not in spatial_time_dims]
+        return sorted(other_dims)
+
     def _initialize_controls(self):
         """Initialize control values based on data."""
         var = self.data[self.var_name]
@@ -158,17 +178,14 @@ class PlotWindow(QMainWindow):
         else:
             self.time_spin.setEnabled(False)
 
-        # Levels
-        n_levels = 1
-        self.level_dim = None
-        for dim in ["level", "height", "pressure", "sigma"]:
+        # Other dimensions
+        for dim in self._get_other_dimensions():
             if dim in var.dims:
-                n_levels = var.sizes[dim]
-                self.level_dim = dim
-                break
-
-        self.level_spin.setMaximum(max(0, n_levels - 1))
-        self.update_level_label()
+                n_vals = var.sizes[dim]
+                spin = self.dimension_selectors.get(dim)
+                if spin:
+                    spin.setMaximum(max(0, n_vals - 1))
+                self.update_dimension_label(dim)
 
         # Auto-scale value range
         try:
@@ -186,14 +203,21 @@ class PlotWindow(QMainWindow):
         var = self.data[self.var_name]
         data_array = var
 
-        # Extract 2D slice
+        # Extract along time dimension
         if "time" in data_array.dims:
             time_idx = self.time_spin.value()
             data_array = data_array.isel(time=time_idx)
 
-        if self.level_dim and self.level_dim in data_array.dims:
-            level_idx = self.level_spin.value()
-            data_array = data_array.isel({self.level_dim: level_idx})
+        # Extract along other dimensions
+        isel_dict = {}
+        for dim in self._get_other_dimensions():
+            if dim in data_array.dims:
+                spin = self.dimension_selectors.get(dim)
+                if spin:
+                    isel_dict[dim] = spin.value()
+        
+        if isel_dict:
+            data_array = data_array.isel(isel_dict)
 
         return data_array
 
@@ -210,9 +234,12 @@ class PlotWindow(QMainWindow):
 
             title = f"{self.var_name}"
             if "time" in self.data[self.var_name].dims:
-                title += f" (time index: {self.time_spin.value()})"
-            if self.level_dim:
-                title += f" ({self.level_dim} index: {self.level_spin.value()})"
+                title += f" (time: {self.time_spin.value()})"
+            
+            for dim in self._get_other_dimensions():
+                spin = self.dimension_selectors.get(dim)
+                if spin:
+                    title += f" ({dim}: {spin.value()})"
 
             self.plot_widget.plot_data(
                 data_array,
@@ -229,9 +256,11 @@ class PlotWindow(QMainWindow):
         self.update_time_label()
         self.plot_data()
 
-    def on_level_changed(self):
-        """Handle level change."""
-        self.update_level_label()
+    def on_dimension_changed(self):
+        """Handle other dimension change."""
+        # Update labels for all dimensions
+        for dim in self._get_other_dimensions():
+            self.update_dimension_label(dim)
         self.plot_data()
 
     def on_plot_update(self):
@@ -250,14 +279,17 @@ class PlotWindow(QMainWindow):
             except (IndexError, TypeError):
                 pass
 
-    def update_level_label(self):
-        """Update level value label."""
-        if self.level_dim and self.level_dim in self.data.coords:
+    def update_dimension_label(self, dim):
+        """Update dimension value label."""
+        if dim in self.data.coords:
             try:
-                level_values = self.data.coords[self.level_dim].values
-                level_idx = self.level_spin.value()
-                level_val = level_values[level_idx]
-                self.level_value_label.setText(f"{self.level_dim}: {level_val:.1f}")
+                dim_values = self.data.coords[dim].values
+                spin = self.dimension_selectors.get(dim)
+                label = self.dimension_selectors.get(f"{dim}_label")
+                if spin and label:
+                    idx = spin.value()
+                    val = dim_values[idx]
+                    label.setText(f"({val:.2f})" if isinstance(val, (int, float)) else f"({val})")
             except (IndexError, TypeError):
                 pass
 
