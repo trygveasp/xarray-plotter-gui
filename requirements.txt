@@ -6,3 +6,4 @@ PyQt6>=6.4.0
 numpy>=1.21.0
 pandas>=1.3.0
 Cartopy>=0.20.0
+pyfimex
